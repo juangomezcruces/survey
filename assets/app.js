@@ -23,6 +23,16 @@
 
   var params = new URLSearchParams(location.search);
 
+  /* Where the survey JSON and images live.
+     - On a plain static host, leave window.SURVEY_BASE unset: paths stay
+       relative to the page, e.g. "surveys/manifest.json".
+     - Inside Django, the template sets it to "{% static 'survey/' %}" so
+       the same files are found under /static/survey/. */
+  var BASE = (window.SURVEY_BASE || "").replace(/\/+$/, "");
+  function assetUrl(path) {
+    return BASE ? BASE + "/" + String(path).replace(/^\/+/, "") : path;
+  }
+
   /* ---- state ---- */
   var survey = null;
   var drawn = [];          // the items this respondent sees, in order
@@ -105,7 +115,7 @@
     var strip = el("div", "logos");
     logos.forEach(function (logo) {
       var img = document.createElement("img");
-      img.src = logo.src;
+      img.src = assetUrl(logo.src);
       img.alt = logo.alt || "";
       if (logo.height) img.style.height = logo.height + "px";
       strip.appendChild(img);
@@ -658,13 +668,13 @@
   function boot() {
     var wanted = params.get("s");
 
-    getJSON("surveys/manifest.json")
+    getJSON(assetUrl("surveys/manifest.json"))
       .catch(function () { return { default: wanted }; })
       .then(function (manifest) {
         var id = wanted || manifest.default;
         if (!id) throw new Error("No survey requested and no default set in surveys/manifest.json.");
         if (!/^[a-z0-9._-]+$/i.test(id)) throw new Error("Bad survey id: " + id);
-        return getJSON("surveys/" + id + ".json");
+        return getJSON(assetUrl("surveys/" + id + ".json"));
       })
       .then(function (def) {
         survey = def;
