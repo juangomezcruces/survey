@@ -44,8 +44,24 @@ function doPost(e) {
 
 /** Visiting the /exec URL in a browser gives you a quick health check. */
 function doGet() {
-  var sheet = getSheet();
-  return json({ ok: true, rows: Math.max(0, sheet.getLastRow() - 1) });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  return json({
+    ok: true,
+    rows: Math.max(0, getSheet().getLastRow() - 1),
+    spreadsheet: ss.getName(),
+    url: ss.getUrl()
+  });
+}
+
+/**
+ * Lost the spreadsheet? Select this function in the editor's toolbar,
+ * press Run, and its URL is printed in the execution log. No redeploy
+ * needed — Run uses the code in the editor, not the deployed version.
+ */
+function whereIsMySheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log('Name: ' + ss.getName());
+  Logger.log('URL:  ' + ss.getUrl());
 }
 
 function getSheet() {
