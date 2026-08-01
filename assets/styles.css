@@ -65,6 +65,50 @@ body { background: #EDF1E4; }
   text-transform: uppercase; color: var(--pine-lo); white-space: nowrap;
 }
 
+/* ---- institutional letterhead ---- */
+.logos {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+  padding: 20px 24px; background: #fff;
+  border-bottom: 1px solid var(--rule);
+}
+.logos img { display: block; height: 52px; width: auto; max-width: 100%; }
+
+/* ---- fixed questions ---- */
+.qbody { padding: 4px 24px 8px; }
+.qbox { padding: 4px 0 8px; }
+.qlabel { font-size: 16.5px; font-weight: 600; line-height: 1.4; margin: 0 0 4px; color: var(--graphite); }
+.req { color: var(--red); font-family: var(--mono); margin-left: 5px; }
+.qhint { font-size: 14px; line-height: 1.5; color: var(--pencil); margin: 0 0 16px; }
+
+.opts { display: flex; flex-direction: column; gap: 2px; }
+.opt {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  padding: 9px 10px; font-size: 15.5px; line-height: 1.4; margin-left: -10px;
+  border: 1px solid transparent; transition: background-color .12s ease, border-color .12s ease;
+}
+.opt:hover { background: #EFF4E9; border-color: var(--rule); }
+.opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.bub {
+  flex: none; width: 18px; height: 18px; border: 1.5px solid var(--pencil);
+  border-radius: 999px; display: grid; place-items: center; background: var(--card);
+  transition: border-color .14s ease;
+}
+.bub i { width: 0; height: 0; background: var(--pine); border-radius: inherit; transition: width .14s ease, height .14s ease; display: block; }
+.opt input:checked + .bub { border-color: var(--pine); border-width: 2px; }
+.opt input:checked + .bub i { width: 9px; height: 9px; }
+.opt input:focus-visible + .bub { outline: 2px solid var(--pine); outline-offset: 3px; }
+.opt input:checked ~ .opt-text { font-weight: 600; color: var(--pine); }
+
+.ss .line {
+  width: 100%; max-width: 420px; border: none; border-bottom: 1.5px solid var(--pencil);
+  background: transparent; font: inherit; font-size: 15px; padding: 7px 2px; color: var(--graphite);
+}
+.ss .line:focus { outline: none; border-bottom-color: var(--pine); }
+.ss .line.other { margin: 2px 0 4px 40px; max-width: 380px; }
+.ss .line.other:disabled { border-bottom-style: dotted; border-bottom-color: var(--rule); cursor: not-allowed; }
+.ss .line::placeholder { color: var(--pine-lo); }
+
 /* ---- generic screen ---- */
 .masthead { padding: 30px 24px 22px; border-bottom: 1px solid var(--rule); }
 .masthead h1 {
@@ -202,7 +246,10 @@ input[type="range"]:focus-visible::-moz-range-thumb { outline: 2px solid var(--r
 @media (max-width: 520px) {
   .ss { padding: 14px 10px 40px; }
   .masthead, .prose, .item, .foot { padding-left: 18px; padding-right: 18px; }
-  .defs { padding-left: 18px; padding-right: 18px; }
+  .defs, .qbody { padding-left: 18px; padding-right: 18px; }
+  .logos { padding: 16px 18px; gap: 16px; justify-content: center; }
+  .logos img { height: 38px; }
+  .ss .line.other { margin-left: 30px; }
   .foot { gap: 10px; }
   .foot .btn { flex: 1; text-align: center; }
 }

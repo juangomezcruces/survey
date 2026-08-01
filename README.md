@@ -118,6 +118,62 @@ page — replace them with your own wording.
 
 Each string in a `body` / `intro` / `outro` array becomes one paragraph.
 
+### Logos
+
+Shown as a letterhead strip on the first and last pages:
+
+```json
+"logos": [
+  { "src": "assets/logo-hpi.png",  "alt": "Hasso Plattner Institute", "height": 54 },
+  { "src": "assets/logo-apsi.png", "alt": "APSI", "height": 46 }
+]
+```
+
+`height` is in pixels on desktop; both scale down to 38px on phones. Drop new
+files in `assets/` and point `src` at them. Omit the whole block for no logos.
+
+### Fixed questions
+
+Anything in the `questions` block is asked of **everyone**, once, on a page
+between the welcome and the definitions — unlike `items`, which are drawn at
+random. Use it for demographics, screeners and consent.
+
+```json
+"questions": {
+  "eyebrow": "About you",
+  "heading": "Your position",
+  "intro": [],
+  "button": "Continue",
+  "items": [
+    {
+      "id": "position",
+      "type": "one",
+      "label": "What is your current academic or professional position?",
+      "hint": "Please select the option that best describes you.",
+      "required": true,
+      "options": ["Ph.D. Candidate / Doctoral Researcher", "…"],
+      "allowOther": true,
+      "otherLabel": "Other (please specify)",
+      "errorText": "Please select your position to continue."
+    }
+  ]
+}
+```
+
+Two types so far:
+
+| type | renders as |
+| --- | --- |
+| `one` | radio buttons, plus an optional free-text "other" via `allowOther` |
+| `short` | single-line text box |
+
+Add as many entries to `items` as you like; they all appear on the one page.
+Each answer becomes a column named `q_<id>` on **every** row that person
+generates, so the sheet stays one flat table. With `allowOther`, picking the
+other option writes `Other` to `q_<id>` and the typed text to `q_<id>_other`.
+
+Delete the whole `questions` block and the page is skipped entirely.
+
 Other settings:
 
 ```json

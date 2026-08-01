@@ -11,18 +11,18 @@
     "step": 1,
     "requireInteraction": false,
     "ticks": [
-      "0 — no support",
+      "0 — maximally illiberal",
       "50",
-      "100 — full support"
+      "100 — maximally liberal"
     ],
     "bands": [
       {
         "upTo": 20,
-        "label": "No support"
+        "label": "Strongly illiberal"
       },
       {
         "upTo": 40,
-        "label": "Low support"
+        "label": "Illiberal"
       },
       {
         "upTo": 60,
@@ -30,11 +30,11 @@
       },
       {
         "upTo": 80,
-        "label": "Support"
+        "label": "Liberal"
       },
       {
         "upTo": 100,
-        "label": "Strong support"
+        "label": "Strongly liberal"
       }
     ]
   },
@@ -42,15 +42,48 @@
     "endpoint": "https://script.google.com/macros/s/AKfycbwciG-uEOnX--Gdmm-CqZxwQapoOZEFr2dmv6fp_jikTQo6Lm0UbQZnScf5CIEzAxAo/exec",
     "participantParam": "p"
   },
+  "logos": [
+    { "src": "assets/logo-hpi.png", "alt": "Hasso Plattner Institute — Digital Engineering, Universität Potsdam", "height": 54 },
+    { "src": "assets/logo-apsi.png", "alt": "APSI — Automated Political Stance Identifier", "height": 46 }
+  ],
   "welcome": {
-    "eyebrow": "Before you begin",
-    "heading": "Rating support for liberal democracy",
+    "eyebrow": "Dear expert",
+    "heading": "Validating the APSI classifier",
     "body": [
-      "PLACEHOLDER — replace this with your own wording. Thank you for taking part in this study. You will be shown a small number of short passages taken from political speeches, party manifestos and public statements, and asked to judge each one.",
-      "The whole thing takes about five minutes. There are no right or wrong answers, and we are interested in your judgement rather than your knowledge of the source.",
-      "PLACEHOLDER — put your consent and data-handling language here. Your answers are recorded anonymously. We do not collect your name, your email address, or your IP address, and the results are reported only in aggregate. You can close the tab at any point and nothing will be saved."
+      "Welcome, and thank you for taking part in this survey! Your participation will help us validate the results of a text classification model that assigns numerical scores to a series of statements. These scores indicate the degree to which each text aligns with specific predefined categories.",
+      "In this survey, you will be asked to assess the scores of four texts. The scores range from 0 to 100, where 0 means the texts reflect a maximally illiberal position and 100 maximally liberal position.",
+      "Your expert judgment will be essential to evaluate the accuracy of the model and improve its performance in future analyses. We greatly appreciate your time and valuable input.",
+      "Best regards,",
+      "The APSI team"
     ],
     "button": "Begin"
+  },
+  "questions": {
+    "eyebrow": "About you",
+    "heading": "Your position",
+    "intro": [],
+    "button": "Continue",
+    "items": [
+      {
+        "id": "position",
+        "type": "one",
+        "label": "What is your current academic or professional position?",
+        "hint": "Please select the option that best describes you.",
+        "required": true,
+        "options": [
+          "Ph.D. Candidate / Doctoral Researcher",
+          "Post-Doctoral Researcher",
+          "Assistant Professor",
+          "Associate Professor",
+          "Full Professor",
+          "Researcher (non-academic institution)"
+        ],
+        "allowOther": true,
+        "otherLabel": "Other (please specify)",
+        "otherPlaceholder": "Please specify",
+        "errorText": "Please select your position to continue."
+      }
+    ]
   },
   "definition": {
     "eyebrow": "How to judge the passages",
@@ -78,7 +111,7 @@
   },
   "item": {
     "hint": "Passage {n} of {total}",
-    "prompt": "How much does this passage support liberal democracy?",
+    "prompt": "Where does this text fall on the illiberal–liberal scale?",
     "nextLabel": "Next",
     "submitLabel": "Submit answers",
     "backLabel": "Back",

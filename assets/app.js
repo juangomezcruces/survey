@@ -27,6 +27,7 @@
   var survey = null;
   var drawn = [];          // the items this respondent sees, in order
   var answers = {};        // uid -> { value, start, changeCount, ms }
+  var profile = {};        // fixed questions everyone answers: id -> value
   var responseId = makeId();
   var startedAt = Date.now();
   var itemEnteredAt = 0;
@@ -97,6 +98,21 @@
     progressText.textContent = step + " / " + total;
   }
 
+  /* Institutional letterhead, shown on the first and last screens. */
+  function logoStrip() {
+    var logos = survey.logos || [];
+    if (!logos.length) return null;
+    var strip = el("div", "logos");
+    logos.forEach(function (logo) {
+      var img = document.createElement("img");
+      img.src = logo.src;
+      img.alt = logo.alt || "";
+      if (logo.height) img.style.height = logo.height + "px";
+      strip.appendChild(img);
+    });
+    return strip;
+  }
+
   function footer(children) {
     var f = el("div", "foot");
     children.filter(Boolean).forEach(function (c) { f.appendChild(c); });
@@ -117,6 +133,9 @@
     var w = survey.welcome || {};
     var wrap = el("div");
 
+    var logos = logoStrip();
+    if (logos) wrap.appendChild(logos);
+
     var head = el("div", "masthead");
     if (w.eyebrow) head.appendChild(el("p", "eyebrow", w.eyebrow));
     head.appendChild(el("h1", null, w.heading || survey.title || "Survey"));
@@ -130,10 +149,179 @@
 
     wrap.appendChild(footer([
       el("span", "spacer"),
-      button(w.button || "Begin", "btn", renderDefinition)
+      button(w.button || "Begin", "btn", afterWelcome)
     ]));
 
     show(wrap);
+  }
+
+  function hasQuestions() {
+    return !!(survey.questions && (survey.questions.items || []).length);
+  }
+
+  function afterWelcome() {
+    if (hasQuestions()) renderQuestions();
+    else renderDefinition();
+  }
+
+  /* ---- 1b. fixed questions, asked of everyone ---- */
+
+  function renderQuestions() {
+    setProgress(0, 0);
+    var q = survey.questions || {};
+    var wrap = el("div");
+
+    var head = el("div", "masthead");
+    if (q.eyebrow) head.appendChild(el("p", "eyebrow", q.eyebrow));
+    head.appendChild(el("h1", null, q.heading || "About you"));
+    wrap.appendChild(head);
+
+    var prose = el("div", "prose");
+    paragraphs(prose, q.intro);
+    wrap.appendChild(prose);
+
+    var errs = {};
+    var body = el("div", "qbody");
+    (q.items || []).forEach(function (item) {
+      body.appendChild(renderQuestion(item, errs));
+    });
+    wrap.appendChild(body);
+
+    wrap.appendChild(footer([
+      button((survey.item && survey.item.backLabel) || "Back", "btn ghost", renderWelcome),
+      el("span", "spacer"),
+      button(q.button || "Continue", "btn", function () {
+        var firstBad = null;
+        (q.items || []).forEach(function (item) {
+          var v = profile[item.id];
+          var missing = item.required && (v === undefined || v === null || String(v).trim() === "");
+          /* "Other" picked but nothing typed in the box counts as missing. */
+          if (item.required && v === "__other__" &&
+              !String(profile[item.id + "__otherText"] || "").trim()) {
+            missing = true;
+          }
+          errs[item.id].textContent = missing ? (item.errorText || "Please answer this question.") : "";
+          if (missing && !firstBad) firstBad = item.id;
+        });
+        if (firstBad) {
+          var node = document.getElementById("q-" + firstBad);
+          if (node) node.scrollIntoView({ block: "center", behavior: "smooth" });
+          return;
+        }
+        renderDefinition();
+      })
+    ]));
+
+    show(wrap);
+  }
+
+  /**
+   * Supported types: "one" (radio buttons, with an optional free-text
+   * "other" choice) and "short" (single-line text).
+   */
+  function renderQuestion(item, errs) {
+    var box = el("div", "qbox");
+    box.id = "q-" + item.id;
+
+    var label = el("p", "qlabel", item.label);
+    if (item.required) {
+      var star = el("span", "req", "*");
+      label.appendChild(star);
+    }
+    box.appendChild(label);
+    if (item.hint) box.appendChild(el("p", "qhint", item.hint));
+
+    var err = el("p", "err");
+    errs[item.id] = err;
+
+    if (item.type === "short") {
+      var input = document.createElement("input");
+      input.type = "text";
+      input.className = "line";
+      input.value = profile[item.id] || "";
+      input.setAttribute("aria-label", item.label);
+      input.addEventListener("input", function () {
+        profile[item.id] = input.value;
+        err.textContent = "";
+      });
+      box.appendChild(input);
+      box.appendChild(err);
+      return box;
+    }
+
+    /* type "one" */
+    var opts = el("div", "opts");
+    var otherInput = null;
+
+    function choose(value) {
+      profile[item.id] = value;
+      err.textContent = "";
+      if (otherInput) {
+        otherInput.disabled = value !== "__other__";
+        if (!otherInput.disabled) otherInput.focus();
+      }
+    }
+
+    (item.options || []).forEach(function (opt, i) {
+      var id = "opt-" + item.id + "-" + i;
+      var lab = el("label", "opt");
+      lab.setAttribute("for", id);
+
+      var radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = item.id;
+      radio.id = id;
+      radio.value = opt;
+      radio.checked = profile[item.id] === opt;
+      radio.addEventListener("change", function () {
+        if (otherInput) { otherInput.disabled = true; }
+        profile[item.id + "__otherText"] = "";
+        choose(opt);
+      });
+
+      lab.appendChild(radio);
+      lab.appendChild(el("span", "bub")).appendChild(el("i"));
+      lab.appendChild(el("span", "opt-text", opt));
+      opts.appendChild(lab);
+    });
+
+    if (item.allowOther) {
+      var oid = "opt-" + item.id + "-other";
+      var olab = el("label", "opt");
+      olab.setAttribute("for", oid);
+
+      var oradio = document.createElement("input");
+      oradio.type = "radio";
+      oradio.name = item.id;
+      oradio.id = oid;
+      oradio.value = "__other__";
+      oradio.checked = profile[item.id] === "__other__";
+
+      olab.appendChild(oradio);
+      olab.appendChild(el("span", "bub")).appendChild(el("i"));
+      olab.appendChild(el("span", "opt-text", item.otherLabel || "Other (please specify)"));
+      opts.appendChild(olab);
+
+      otherInput = document.createElement("input");
+      otherInput.type = "text";
+      otherInput.className = "line other";
+      otherInput.placeholder = item.otherPlaceholder || "Please specify";
+      otherInput.value = profile[item.id + "__otherText"] || "";
+      otherInput.disabled = profile[item.id] !== "__other__";
+      otherInput.setAttribute("aria-label", item.otherLabel || "Other, please specify");
+
+      oradio.addEventListener("change", function () { choose("__other__"); });
+      otherInput.addEventListener("input", function () {
+        profile[item.id + "__otherText"] = otherInput.value;
+        err.textContent = "";
+      });
+
+      opts.appendChild(otherInput);
+    }
+
+    box.appendChild(opts);
+    box.appendChild(err);
+    return box;
   }
 
   /* ---- 2. definition ---- */
@@ -169,7 +357,7 @@
     wrap.appendChild(outro);
 
     wrap.appendChild(footer([
-      button(survey.item && survey.item.backLabel || "Back", "btn ghost", renderWelcome),
+      button(survey.item && survey.item.backLabel || "Back", "btn ghost", afterWelcome),
       el("span", "spacer"),
       button(d.button || "Start", "btn", function () { renderItem(0); })
     ]));
@@ -308,10 +496,21 @@
     var participant = params.get((survey.submit && survey.submit.participantParam) || "p") || "";
     var drawnUids = drawn.map(function (i) { return i.uid; }).join(" ");
 
+    /* Fixed-question answers are per respondent, not per item, so they are
+       repeated on each of that person's rows — keeps the sheet one flat
+       table you can read straight into R or Stata. */
+    var profileCols = {};
+    ((survey.questions && survey.questions.items) || []).forEach(function (q) {
+      var v = profile[q.id];
+      var text = profile[q.id + "__otherText"] || "";
+      profileCols["q_" + q.id] = v === "__other__" ? "Other" : (v === undefined ? "" : v);
+      if (q.allowOther) profileCols["q_" + q.id + "_other"] = v === "__other__" ? text : "";
+    });
+
     return drawn.map(function (item, i) {
       var a = answers[item.uid] || {};
       var value = a.value === null || a.value === undefined ? a.start : a.value;
-      return {
+      var row = {
         submitted_at: submittedAt,
         response_id: responseId,
         survey_id: survey.id || "",
@@ -332,6 +531,8 @@
         user_agent: navigator.userAgent,
         referrer: document.referrer || ""
       };
+      Object.keys(profileCols).forEach(function (k) { row[k] = profileCols[k]; });
+      return row;
     });
   }
 
@@ -392,6 +593,9 @@
     setProgress(drawn.length, drawn.length);
     var d = survey.done || {};
     var wrap = el("div");
+
+    var logos = logoStrip();
+    if (logos) wrap.appendChild(logos);
 
     var head = el("div", "masthead");
     var stamp = el("span", "stamp" + (result.saved ? "" : " warn"),
