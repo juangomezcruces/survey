@@ -1,0 +1,493 @@
+/* ------------------------------------------------------------------ */
+/*  Survey runner                                                       */
+/*                                                                      */
+/*  Static — no build step, no framework. It reads a survey definition  */
+/*  from surveys/<id>.json, draws a random subset of items, collects    */
+/*  slider ratings, and POSTs one row per rated item to a Google Apps   */
+/*  Script endpoint.                                                    */
+/*                                                                      */
+/*  You should not need to edit this file to run a new survey. Add a    */
+/*  JSON file in surveys/ and list it in surveys/manifest.json.         */
+/* ------------------------------------------------------------------ */
+
+(function () {
+  "use strict";
+
+  var screenEl = document.getElementById("screen");
+  var bandId = document.getElementById("band-id");
+  var bandMeta = document.getElementById("band-meta");
+  var progress = document.getElementById("progress");
+  var progressFill = document.getElementById("progress-fill");
+  var progressText = document.getElementById("progress-text");
+  var colophon = document.getElementById("colophon");
+
+  var params = new URLSearchParams(location.search);
+
+  /* ---- state ---- */
+  var survey = null;
+  var drawn = [];          // the items this respondent sees, in order
+  var answers = {};        // uid -> { value, start, changeCount, ms }
+  var responseId = makeId();
+  var startedAt = Date.now();
+  var itemEnteredAt = 0;
+  var sent = false;
+
+  /* ---------------------------------------------------------------- */
+  /*  Helpers                                                          */
+  /* ---------------------------------------------------------------- */
+
+  function makeId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+
+  function el(tag, className, text) {
+    var n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+
+  function paragraphs(parent, list, className) {
+    (list || []).forEach(function (t) {
+      parent.appendChild(el("p", className || null, t));
+    });
+  }
+
+  function fill(template, values) {
+    return String(template || "").replace(/\{(\w+)\}/g, function (m, key) {
+      return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : m;
+    });
+  }
+
+  /* Fisher-Yates, so every item has an equal chance of being drawn. */
+  function shuffle(list) {
+    var a = list.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function bandFor(value) {
+    var bands = (survey.slider && survey.slider.bands) || [];
+    for (var i = 0; i < bands.length; i++) {
+      if (value <= bands[i].upTo) return bands[i].label;
+    }
+    return bands.length ? bands[bands.length - 1].label : "";
+  }
+
+  function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+
+  /* ---------------------------------------------------------------- */
+  /*  Screens                                                          */
+  /* ---------------------------------------------------------------- */
+
+  function show(node) {
+    screenEl.innerHTML = "";
+    screenEl.appendChild(node);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function setProgress(step, total) {
+    if (!total) { progress.hidden = true; return; }
+    progress.hidden = false;
+    progressFill.style.width = Math.round((step / total) * 100) + "%";
+    progressText.textContent = step + " / " + total;
+  }
+
+  function footer(children) {
+    var f = el("div", "foot");
+    children.filter(Boolean).forEach(function (c) { f.appendChild(c); });
+    return f;
+  }
+
+  function button(label, className, onClick) {
+    var b = el("button", className, label);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  /* ---- 1. welcome ---- */
+
+  function renderWelcome() {
+    setProgress(0, 0);
+    var w = survey.welcome || {};
+    var wrap = el("div");
+
+    var head = el("div", "masthead");
+    if (w.eyebrow) head.appendChild(el("p", "eyebrow", w.eyebrow));
+    head.appendChild(el("h1", null, w.heading || survey.title || "Survey"));
+    wrap.appendChild(head);
+
+    var prose = el("div", "prose");
+    (w.body || []).forEach(function (t, i) {
+      prose.appendChild(el("p", i === 0 ? "lede" : null, t));
+    });
+    wrap.appendChild(prose);
+
+    wrap.appendChild(footer([
+      el("span", "spacer"),
+      button(w.button || "Begin", "btn", renderDefinition)
+    ]));
+
+    show(wrap);
+  }
+
+  /* ---- 2. definition ---- */
+
+  function renderDefinition() {
+    setProgress(0, 0);
+    var d = survey.definition || {};
+    var wrap = el("div");
+
+    var head = el("div", "masthead");
+    if (d.eyebrow) head.appendChild(el("p", "eyebrow", d.eyebrow));
+    head.appendChild(el("h1", null, d.heading || "Definitions"));
+    wrap.appendChild(head);
+
+    var intro = el("div", "prose");
+    paragraphs(intro, d.intro, "lede");
+    wrap.appendChild(intro);
+
+    if (d.cards && d.cards.length) {
+      var defs = el("div", "defs");
+      d.cards.forEach(function (c) {
+        var card = el("div", "def" + (c.tone === "low" ? " low" : ""));
+        card.appendChild(el("h3", null, c.title));
+        card.appendChild(el("p", null, c.body));
+        defs.appendChild(card);
+      });
+      wrap.appendChild(defs);
+    }
+
+    var outro = el("div", "prose");
+    outro.style.paddingTop = "20px";
+    paragraphs(outro, d.outro);
+    wrap.appendChild(outro);
+
+    wrap.appendChild(footer([
+      button(survey.item && survey.item.backLabel || "Back", "btn ghost", renderWelcome),
+      el("span", "spacer"),
+      button(d.button || "Start", "btn", function () { renderItem(0); })
+    ]));
+
+    show(wrap);
+  }
+
+  /* ---- 3. an item ---- */
+
+  function renderItem(index) {
+    var item = drawn[index];
+    var total = drawn.length;
+    var cfg = survey.item || {};
+    var sl = survey.slider || {};
+    var min = sl.min === undefined ? 0 : sl.min;
+    var max = sl.max === undefined ? 100 : sl.max;
+    var step = sl.step || 1;
+
+    var state = answers[item.uid];
+    if (!state) {
+      state = answers[item.uid] = {
+        start: clamp(item.start === undefined ? Math.round((min + max) / 2) : item.start, min, max),
+        value: null,
+        changeCount: 0,
+        ms: 0
+      };
+    }
+    var current = state.value === null ? state.start : state.value;
+
+    setProgress(index + 1, total);
+    itemEnteredAt = Date.now();
+
+    var wrap = el("div");
+    var body = el("div", "item");
+
+    body.appendChild(el("p", "item-hint", fill(cfg.hint || "Passage {n} of {total}", {
+      n: index + 1, total: total
+    })));
+    body.appendChild(el("blockquote", "quote", item.text));
+    body.appendChild(el("p", "eyebrow", cfg.prompt || "Your rating"));
+
+    /* slider */
+    var sw = el("div", "slider-wrap");
+
+    var readout = el("div", "readout");
+    var valEl = el("span", "val", String(current));
+    var bandEl = el("span", "band-label", bandFor(current));
+    readout.appendChild(valEl);
+    readout.appendChild(bandEl);
+    sw.appendChild(readout);
+
+    var range = document.createElement("input");
+    range.type = "range";
+    range.min = String(min);
+    range.max = String(max);
+    range.step = String(step);
+    range.value = String(current);
+    range.setAttribute("aria-label", cfg.prompt || "Rating");
+    range.setAttribute("aria-valuetext", current + " — " + bandFor(current));
+    sw.appendChild(range);
+
+    var ticks = el("div", "ticks");
+    (sl.ticks || [String(min), String(max)]).forEach(function (t) {
+      ticks.appendChild(el("span", null, t));
+    });
+    sw.appendChild(ticks);
+
+    var note = el("p", "anchor-note");
+    sw.appendChild(note);
+
+    function paintNote() {
+      var v = Number(range.value);
+      var delta = v - state.start;
+      if (delta === 0) {
+        note.className = "anchor-note";
+        note.textContent = fill(cfg.anchorNote || "Starting point: {start}", { start: state.start });
+      } else {
+        note.className = "anchor-note moved";
+        note.textContent = fill(cfg.movedNote || "Moved {delta} from {start}", {
+          delta: (delta > 0 ? "+" : "") + delta,
+          start: state.start
+        });
+      }
+    }
+    paintNote();
+
+    range.addEventListener("input", function () {
+      var v = Number(range.value);
+      state.value = v;
+      state.changeCount++;
+      valEl.textContent = String(v);
+      bandEl.textContent = bandFor(v);
+      range.setAttribute("aria-valuetext", v + " — " + bandFor(v));
+      paintNote();
+      err.textContent = "";
+    });
+
+    body.appendChild(sw);
+    var err = el("p", "err");
+    body.appendChild(err);
+    wrap.appendChild(body);
+
+    function leave() {
+      state.ms += Date.now() - itemEnteredAt;
+      if (state.value === null) state.value = state.start;
+    }
+
+    var isLast = index === total - 1;
+    var next = button(isLast ? (cfg.submitLabel || "Submit") : (cfg.nextLabel || "Next"), "btn", function () {
+      if (sl.requireInteraction && state.value === null) {
+        err.textContent = "Please move the slider before continuing.";
+        return;
+      }
+      leave();
+      if (isLast) submit();
+      else renderItem(index + 1);
+    });
+
+    var back = button(cfg.backLabel || "Back", "btn ghost", function () {
+      leave();
+      if (index === 0) renderDefinition();
+      else renderItem(index - 1);
+    });
+
+    wrap.appendChild(footer([back, el("span", "spacer"), next]));
+    show(wrap);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Submission                                                       */
+  /* ---------------------------------------------------------------- */
+
+  function buildRows() {
+    var submittedAt = new Date().toISOString();
+    var totalMs = Date.now() - startedAt;
+    var participant = params.get((survey.submit && survey.submit.participantParam) || "p") || "";
+    var drawnUids = drawn.map(function (i) { return i.uid; }).join(" ");
+
+    return drawn.map(function (item, i) {
+      var a = answers[item.uid] || {};
+      var value = a.value === null || a.value === undefined ? a.start : a.value;
+      return {
+        submitted_at: submittedAt,
+        response_id: responseId,
+        survey_id: survey.id || "",
+        participant: participant,
+        item_order: i + 1,
+        item_uid: item.uid,
+        lib_score: item.libScore === undefined ? "" : item.libScore,
+        lib_label: item.libLabel || "",
+        slider_start: a.start,
+        slider_value: value,
+        delta: value - a.start,
+        moved: a.changeCount > 0 ? 1 : 0,
+        change_count: a.changeCount || 0,
+        ms_on_item: a.ms || 0,
+        total_ms: totalMs,
+        drawn_uids: drawnUids,
+        screen_width: window.innerWidth || (window.screen && window.screen.width) || "",
+        user_agent: navigator.userAgent,
+        referrer: document.referrer || ""
+      };
+    });
+  }
+
+  function submit() {
+    if (sent) return;
+    sent = true;
+
+    var rows = buildRows();
+    var endpoint = (survey.submit && survey.submit.endpoint) || "";
+    var payload = JSON.stringify({ surveyId: survey.id, responseId: responseId, rows: rows });
+
+    renderSending();
+
+    if (!endpoint) {
+      renderDone({ saved: false, reason: "no-endpoint", payload: payload });
+      return;
+    }
+
+    /* Content-Type text/plain keeps the browser from sending a CORS
+       preflight, which Apps Script web apps do not answer. */
+    var opts = {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: payload,
+      redirect: "follow"
+    };
+
+    fetch(endpoint, opts)
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        renderDone({ saved: true });
+      })
+      .catch(function () {
+        /* Some Apps Script deployments do not expose CORS headers on the
+           redirect. Fire again opaquely — the write still happens, we just
+           cannot read the reply. */
+        opts.mode = "no-cors";
+        return fetch(endpoint, opts).then(function () {
+          renderDone({ saved: true, opaque: true });
+        });
+      })
+      .catch(function (e) {
+        renderDone({ saved: false, reason: String(e && e.message || e), payload: payload });
+      });
+  }
+
+  function renderSending() {
+    setProgress(drawn.length, drawn.length);
+    var wrap = el("div");
+    var prose = el("div", "prose");
+    prose.style.padding = "40px 24px";
+    prose.appendChild(el("p", "lede", "Sending your answers…"));
+    wrap.appendChild(prose);
+    show(wrap);
+  }
+
+  function renderDone(result) {
+    setProgress(drawn.length, drawn.length);
+    var d = survey.done || {};
+    var wrap = el("div");
+
+    var head = el("div", "masthead");
+    var stamp = el("span", "stamp" + (result.saved ? "" : " warn"),
+      result.saved ? (d.stamp || "Received") : "Not sent");
+    head.appendChild(stamp);
+    head.appendChild(el("h1", null, result.saved ? (d.heading || "Thank you") : "Almost there"));
+    wrap.appendChild(head);
+
+    var prose = el("div", "prose");
+    if (result.saved) {
+      paragraphs(prose, d.body && d.body.length ? d.body : ["Your answers have been recorded."]);
+    } else {
+      prose.appendChild(el("p", "lede",
+        "Your answers could not be sent automatically, and nothing has been lost. " +
+        "Please copy the text below and email it to the researcher."));
+      var ta = el("textarea", "fallback");
+      ta.value = result.payload;
+      ta.readOnly = true;
+      prose.appendChild(ta);
+
+      var actions = el("div");
+      actions.style.marginTop = "12px";
+      actions.appendChild(button("Copy", "btn ghost", function () {
+        ta.select();
+        try { document.execCommand("copy"); } catch (e) { /* user can copy by hand */ }
+      }));
+      prose.appendChild(actions);
+      prose.appendChild(el("p", "err", "Reason: " + result.reason));
+    }
+    wrap.appendChild(prose);
+    wrap.appendChild(footer([el("span", "spacer")]));
+
+    show(wrap);
+  }
+
+  function renderFatal(message, detail) {
+    setProgress(0, 0);
+    var wrap = el("div");
+    var head = el("div", "masthead");
+    head.appendChild(el("span", "stamp warn", "Not available"));
+    head.appendChild(el("h1", null, message));
+    wrap.appendChild(head);
+    var prose = el("div", "prose");
+    prose.appendChild(el("p", null, detail));
+    wrap.appendChild(prose);
+    show(wrap);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Boot                                                             */
+  /* ---------------------------------------------------------------- */
+
+  function getJSON(url) {
+    return fetch(url, { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error(url + " → HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function boot() {
+    var wanted = params.get("s");
+
+    getJSON("surveys/manifest.json")
+      .catch(function () { return { default: wanted }; })
+      .then(function (manifest) {
+        var id = wanted || manifest.default;
+        if (!id) throw new Error("No survey requested and no default set in surveys/manifest.json.");
+        if (!/^[a-z0-9._-]+$/i.test(id)) throw new Error("Bad survey id: " + id);
+        return getJSON("surveys/" + id + ".json");
+      })
+      .then(function (def) {
+        survey = def;
+
+        var items = survey.items || [];
+        if (!items.length) throw new Error("This survey has no items.");
+        var draw = Math.min((survey.sampling && survey.sampling.drawCount) || 4, items.length);
+        drawn = shuffle(items).slice(0, draw);
+
+        document.title = survey.title || "Survey";
+        bandId.textContent = survey.shortName || survey.id || "Survey";
+        bandMeta.textContent = draw + " passages · ~5 min";
+        colophon.textContent = "Response " + responseId.slice(0, 8);
+
+        renderWelcome();
+      })
+      .catch(function (e) {
+        renderFatal("This survey could not be loaded", String(e && e.message || e));
+      });
+  }
+
+  /* Warn before an accidental reload mid-survey. */
+  window.addEventListener("beforeunload", function (e) {
+    if (sent || !drawn.length || screenEl.querySelector(".quote") === null) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+
+  boot();
+})();

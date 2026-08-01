@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Survey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Bump ?v= whenever you change styles.css or app.js, so returning
+     visitors are not served a cached copy of the old files. -->
+<link rel="stylesheet" href="assets/styles.css?v=4">
+</head>
+<body>
+
+<main class="ss">
+  <div class="sheet" id="sheet">
+
+    <!-- header band -->
+    <div class="band">
+      <span class="band-id" id="band-id">Survey</span>
+      <span class="band-meta" id="band-meta"></span>
+    </div>
+
+    <!-- progress rail -->
+    <div class="progress" id="progress" hidden>
+      <div class="progress-bar"><i id="progress-fill"></i></div>
+      <span class="progress-text" id="progress-text"></span>
+    </div>
+
+    <!-- screens are swapped in here -->
+    <div id="screen" aria-live="polite"></div>
+
+  </div>
+
+  <p class="colophon" id="colophon"></p>
+</main>
+
+<script src="assets/app.js?v=4"></script>
+</body>
+</html>
