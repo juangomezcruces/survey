@@ -39,7 +39,7 @@
     ]
   },
   "submit": {
-    "endpoint": "",
+    "endpoint": "https://script.google.com/macros/s/AKfycbwciG-uEOnX--Gdmm-CqZxwQapoOZEFr2dmv6fp_jikTQo6Lm0UbQZnScf5CIEzAxAo/exec",
     "participantParam": "p"
   },
   "welcome": {
