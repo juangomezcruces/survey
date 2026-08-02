@@ -61,6 +61,7 @@ per participant. Columns:
 | `ms_on_item` | milliseconds spent on that passage |
 | `total_ms` | milliseconds for the whole session |
 | `drawn_uids` | all 4 passages this participant was assigned |
+| `assignment` | `balanced` if the draw used the live rating counts, `random` if it fell back |
 | `screen_width`, `user_agent`, `referrer` | for screening out odd sessions |
 
 > **Note on `moved`.** Because the slider opens on the classifier's score,
@@ -173,6 +174,32 @@ generates, so the sheet stays one flat table. With `allowOther`, picking the
 other option writes `Other` to `q_<id>` and the typed text to `q_<id>_other`.
 
 Delete the whole `questions` block and the page is skipped entirely.
+
+### How passages are assigned
+
+Each respondent sees `sampling.drawCount` of the items. Rather than drawing
+at random and letting coverage drift, the app asks the endpoint how many
+ratings each passage already has and serves the **least-rated** ones, with
+ties broken at random. Coverage stays even at any sample size.
+
+The request runs in the background while the respondent reads the welcome
+page, and the draw happens when they leave the instructions. If the endpoint
+is unreachable, slow (>5s), or still on an Apps Script version that predates
+this, it silently falls back to a plain random draw — the `assignment` column
+records which happened.
+
+To turn balancing off and always draw at random:
+
+```json
+"sampling": { "drawCount": 4, "balance": false }
+```
+
+> Balancing needs the `doGet` in [apps-script/Code.gs](apps-script/Code.gs)
+> **and a redeployed web app** — Apps Script serves the version pinned at
+> deploy time, so editing the script is not enough. Deploy → Manage
+> deployments → ✏️ → Version: **New version** → Deploy. Check it worked by
+> opening `<your /exec URL>?counts=1` in a browser: you should see a
+> `counts` object rather than just a row total.
 
 Other settings:
 

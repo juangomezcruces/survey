@@ -42,8 +42,20 @@ function doPost(e) {
   }
 }
 
-/** Visiting the /exec URL in a browser gives you a quick health check. */
-function doGet() {
+/**
+ * Visiting the /exec URL in a browser gives you a quick health check.
+ *
+ * With ?counts=1&survey=<id> it instead returns how many times each text
+ * has been rated so far. The survey uses that to hand each respondent the
+ * least-rated passages, so coverage stays even instead of drifting.
+ */
+function doGet(e) {
+  var params = (e && e.parameter) || {};
+
+  if (params.counts) {
+    return json({ ok: true, counts: itemCounts(params.survey || '') });
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   return json({
     ok: true,
@@ -51,6 +63,30 @@ function doGet() {
     spreadsheet: ss.getName(),
     url: ss.getUrl()
   });
+}
+
+/** { item_uid: times rated }, optionally limited to one survey. */
+function itemCounts(surveyId) {
+  var sheet = getSheet();
+  var lastRow = sheet.getLastRow();
+  var counts = {};
+  if (lastRow < 2) return counts;
+
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var uidCol = header.indexOf('item_uid') + 1;
+  if (!uidCol) return counts;
+  var surveyCol = header.indexOf('survey_id') + 1;
+
+  var n = lastRow - 1;
+  var uids = sheet.getRange(2, uidCol, n, 1).getValues();
+  var surveys = surveyCol ? sheet.getRange(2, surveyCol, n, 1).getValues() : null;
+
+  for (var i = 0; i < n; i++) {
+    if (surveyId && surveys && surveys[i][0] !== surveyId) continue;
+    var uid = uids[i][0];
+    if (uid) counts[uid] = (counts[uid] || 0) + 1;
+  }
+  return counts;
 }
 
 /**
