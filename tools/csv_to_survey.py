@@ -33,25 +33,48 @@ SCORE_TO_SLIDER = 10  # lib_score is 0-10, the slider is 0-100
 
 
 def build_items(csv_path: Path) -> list[dict]:
-    items = []
-    with csv_path.open(newline="", encoding="utf-8-sig") as fh:
-        for i, row in enumerate(csv.DictReader(fh), start=1):
-            text = (row.get(COLUMNS["text"]) or "").strip().strip('"').strip()
-            if not text:
-                continue
-            raw = (row.get(COLUMNS["score"]) or "").strip()
-            try:
-                score = float(raw)
-            except ValueError:
-                sys.exit(f"row {i}: '{COLUMNS['score']}' is not a number: {raw!r}")
+    """Read the CSV, tolerating paragraphs whose commas were never quoted.
 
-            items.append({
-                "uid": (row.get(COLUMNS["uid"]) or f"item_{i:04d}").strip(),
-                "text": text,
-                "libScore": round(score, 4),
-                "libLabel": (row.get(COLUMNS["label"]) or "").strip(),
-                "start": max(0, min(100, round(score * SCORE_TO_SLIDER))),
-            })
+    Spreadsheet exports often lose the quoting around `paragraph`, which
+    splits one text across many columns. Since `paragraph` is the only
+    free-text column, anything between the uid and the trailing
+    score/label belongs to it and can be rejoined.
+    """
+    with csv_path.open(newline="", encoding="utf-8-sig") as fh:
+        rows = [r for r in csv.reader(fh) if any(f.strip() for f in r)]
+
+    if not rows:
+        sys.exit("the CSV is empty")
+
+    items, repaired = [], 0
+    for line_no, row in enumerate(rows[1:], start=2):
+        if len(row) < 4:
+            sys.exit(f"line {line_no}: only {len(row)} columns, expected at least 4")
+        if len(row) > 4:
+            repaired += 1
+
+        uid = row[0].strip() or f"item_{line_no - 1:04d}"
+        label = row[-1].strip()
+        raw = row[-2].strip()
+        text = ",".join(row[1:-2]).strip().strip('"').strip()
+
+        try:
+            score = float(raw)
+        except ValueError:
+            sys.exit(f"line {line_no}: '{raw}' is not a number — check the CSV's quoting")
+        if not text:
+            sys.exit(f"line {line_no}: empty paragraph")
+
+        items.append({
+            "uid": uid,
+            "text": text,
+            "libScore": round(score, 4),
+            "libLabel": label,
+            "start": max(0, min(100, round(score * SCORE_TO_SLIDER))),
+        })
+
+    if repaired:
+        print(f"note: rejoined unquoted commas in {repaired} row(s)")
     return items
 
 
